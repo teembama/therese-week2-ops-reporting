@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Koya Talent — Operations Dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --plane: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --gridline: #e1e0d9;
+    --border: rgba(11,11,11,0.10);
+    --good-text: #006300;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    /* section accents — validated categorical slots 1/2/3 */
+    --sales-accent: #2a78d6;   --sales-tint: #eef4fd;
+    --delivery-accent: #eb6834; --delivery-tint: #fdf1ec;
+    --people-accent: #1baf7a;   --people-tint: #e9f7f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --plane: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --muted: #898781;
+      --gridline: #2c2c2a;
+      --border: rgba(255,255,255,0.10);
+      --good-text: #0ca30c;
+      --sales-accent: #3987e5;    --sales-tint: #16202b;
+      --delivery-accent: #d95926; --delivery-tint: #241a15;
+      --people-accent: #199e70;   --people-tint: #13211c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--plane); color: var(--text-primary);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 24px 20px 64px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  .sub { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+  select, input[type="date"], button {
+    font: inherit; padding: 7px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  }
+  button { cursor: pointer; font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--sales-accent); border-color: var(--sales-accent); color: #fff; }
+  .controls {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; margin: 16px 0 8px;
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field span { font-size: 12px; color: var(--text-secondary); }
+  .check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .status { font-size: 13px; margin: 8px 0 0; min-height: 20px; }
+  .status.err { color: var(--critical); }
+  .status.busy { color: var(--text-secondary); }
+  .status.ok { color: var(--good-text); }
+  .periodbar {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin: 16px 0 24px; font-size: 13px; color: var(--text-secondary);
+  }
+  .periodbar strong { color: var(--text-primary); }
+
+  section.dept { border-radius: 12px; padding: 16px; margin-top: 24px;
+                 background: var(--tint); border: 1px solid var(--border); }
+  section.dept h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
+                    margin: 0 0 12px; font-weight: 700; color: var(--accent);
+                    display: flex; align-items: center; gap: 8px; }
+  section.dept h2::before { content: ''; width: 10px; height: 10px; border-radius: 3px;
+                            background: var(--accent); display: inline-block; }
+  h2.plain { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
+             color: var(--muted); margin: 32px 0 12px; font-weight: 650; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .tile .label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+  .tile .value { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+  .tile .delta { font-size: 12px; margin-top: 6px; color: var(--text-secondary); }
+  .delta .up { color: var(--good-text); font-weight: 600; }
+  .delta .down { color: var(--critical); font-weight: 600; }
+  .delta .flat { color: var(--muted); font-weight: 600; }
+  .delta .none { color: var(--muted); font-style: italic; }
+
+  .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .panel .ptitle { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+  .panel .pscale { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  .bars { display: grid; gap: 10px; }
+  .barrow { display: grid; grid-template-columns: 130px 1fr 96px; gap: 10px; align-items: center; font-size: 13px; }
+  .barrow .cat { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bartrack { background: var(--gridline); border-radius: 4px; height: 12px; overflow: hidden; }
+  .barfill { background: var(--accent); height: 100%; border-radius: 0 4px 4px 0; min-width: 2px; }
+  .barval { text-align: right; font-variant-numeric: tabular-nums; }
+  .barval em { color: var(--muted); font-style: normal; font-size: 11px; }
+  .single { display: grid; gap: 6px; font-size: 13px; }
+  .single div { display: flex; justify-content: space-between; gap: 12px; }
+  .single span:first-child { color: var(--text-secondary); }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+
+  .summary { font-size: 15px; line-height: 1.6; }
+  .item { border-top: 1px solid var(--gridline); padding: 12px 0; }
+  .item:first-of-type { border-top: none; padding-top: 4px; }
+  .item .head { font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .item .body { color: var(--text-secondary); margin-top: 4px; font-size: 13px; }
+  .sev { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.04em;
+         padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+  .sev-high { color: var(--critical); } .sev-medium { color: var(--serious); } .sev-low { color: var(--warning); }
+  .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 7px; }
+  ul.plain { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 13px; }
+  ul.plain li { margin: 6px 0; }
+  .banner { border-radius: 10px; padding: 12px 14px; font-size: 13px; margin-bottom: 16px;
+            border: 1px solid var(--border); background: var(--surface-1); }
+  .banner.bad { border-left: 3px solid var(--critical); }
+  .banner.warn { border-left: 3px solid var(--warning); }
+  .notes { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  footer { margin-top: 40px; font-size: 12px; color: var(--muted); }
+  code { font-size: 12px; background: var(--gridline); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div>
+    <h1>Koya Talent — Operations Dashboard</h1>
+    <div class="sub" id="subtitle">Loading…</div>
+  </div>
+
+  <div class="controls">
+    <label class="field">
+      <span>Reporting period</span>
+      <select id="periodSelect"><option>Loading…</option></select>
+    </label>
+    <label class="field">
+      <span>Custom start</span>
+      <input type="date" id="customStart" min="2025-01-01" max="2026-06-30" value="2026-04-01">
+    </label>
+    <label class="field">
+      <span>Custom end</span>
+      <input type="date" id="customEnd" min="2025-01-01" max="2026-06-30" value="2026-06-30">
+    </label>
+    <button class="primary" id="runBtn">Show this range</button>
+    <label class="check">
+      <input type="checkbox" id="forceRun">
+      Recalculate even if stored
+    </label>
+  </div>
+  <div class="status" id="status"></div>
+
+  <div id="content"></div>
+
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+const SUPABASE_URL      = 'https://tmadptkprxpwkujwyhel.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRtYWRwdGtwcnhwd2t1and5aGVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNTM5MzMsImV4cCI6MjEwMzgyOTkzM30.uQL_glcX48HNcgc2SrjX5sPIiaSzzTU6aQNztU9r5V0';
+const WEBHOOK_URL       = 'https://pod1.app.n8n.cloud/webhook/ops-report';
+const REFERENCE_DATE    = '2026-06-30';
+// ---------------------------------------------------------------------------
+
+const NAMED_PERIODS = ['last_30', 'last_90', 'ytd'];
+const PERIOD_LABELS = {
+  last_30: 'Last 30 days', last_90: 'Last 90 days',
+  ytd: 'Year to date', custom: 'Custom range'
+};
+
+const LOWER_IS_BETTER = new Set([
+  'cost_per_lead', 'exits', 'attrition_rate_pct', 'blocked_projects',
+  'average_delay_days', 'budget_variance', 'time_to_hire_days'
+]);
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = v => v === null || v === undefined ? '—' :
+  (typeof v === 'number' ? v.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(v));
+
+let runs = [];
+
+function setStatus(msg, cls = '') {
+  const el = $('status'); el.className = 'status ' + cls; el.textContent = msg;
+}
+
+async function fetchRuns() {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/report_runs?select=*&order=updated_at.desc`,
+    { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
+  if (!res.ok) throw new Error(`Supabase returned ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+// The dropdown lists only the three named periods — custom ranges are stored and
+// retrievable via the date pickers, but listing every one would bloat the menu.
+function namedRuns() {
+  const byLabel = {};
+  for (const r of runs) if (NAMED_PERIODS.includes(r.period_label) && !byLabel[r.period_label]) byLabel[r.period_label] = r;
+  return NAMED_PERIODS.filter(l => byLabel[l]).map(l => byLabel[l]);
+}
+
+function refreshSelect(runToShow) {
+  const list = namedRuns();
+  const sel = $('periodSelect');
+  sel.innerHTML = list.map(r =>
+    `<option value="${esc(r.id)}">${esc(PERIOD_LABELS[r.period_label])}</option>`).join('');
+  const target = runToShow || list[0];
+  if (!target) return;
+  if (list.some(r => String(r.id) === String(target.id))) sel.value = String(target.id);
+  render(target);
+}
+
+async function load() {
+  if (SUPABASE_ANON_KEY.startsWith('PASTE_')) {
+    $('content').innerHTML = `<div class="banner bad"><strong>Not configured.</strong>
+      Replace <code>PASTE_YOUR_ANON_KEY_HERE</code> and
+      <code>PASTE_YOUR_N8N_WEBHOOK_URL_HERE</code> at the top of this file.</div>`;
+    $('subtitle').textContent = 'Awaiting configuration';
+    return;
+  }
+  try { runs = await fetchRuns(); }
+  catch (e) {
+    $('content').innerHTML = `<div class="banner bad"><strong>Could not load data.</strong>
+      ${esc(e.message)}</div>`;
+    $('subtitle').textContent = 'Connection failed';
+    return;
+  }
+  if (!runs.length) {
+    $('content').innerHTML = `<div class="banner warn"><strong>No reports yet.</strong>
+      Pick a range above and select "Show this range".</div>`;
+    $('subtitle').textContent = 'No data';
+    return;
+  }
+  $('periodSelect').onchange = e => {
+    const r = runs.find(x => String(x.id) === e.target.value);
+    if (r) render(r);
+  };
+  refreshSelect();
+}
+
+function findExisting(start, end) {
+  return runs.find(r => r.period_start === start && r.period_end === end
+                        && r.reference_date === REFERENCE_DATE);
+}
+
+async function requestRange() {
+  const start = $('customStart').value, end = $('customEnd').value;
+  const force = $('forceRun').checked;
+  const btn = $('runBtn');
+
+  if (!start || !end) return setStatus('Pick both a start and an end date.', 'err');
+  if (start > end) return setStatus('Start date is after the end date.', 'err');
+  if (end > REFERENCE_DATE) return setStatus(`End date cannot be after the reference date (${REFERENCE_DATE}).`, 'err');
+
+  const existing = findExisting(start, end);
+  if (existing && !force) {
+    render(existing);
+    return setStatus('Already calculated — served from storage. Tick "Recalculate" to refresh it against the sources.', 'ok');
+  }
+  if (WEBHOOK_URL.startsWith('PASTE_')) {
+    return setStatus('Webhook URL is not configured.', 'err');
+  }
+
+  const before = existing ? existing.updated_at : null;
+  btn.disabled = true;
+  setStatus(force && existing ? 'Recalculating from the source systems…' : 'Running the workflow…', 'busy');
+
+  try {
+    await fetch(WEBHOOK_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ period: 'custom', custom_start: start, custom_end: end,
+                             reference_date: REFERENCE_DATE })
+    });
+  } catch (e) {
+    btn.disabled = false;
+    return setStatus(`Could not reach the workflow. ${e.message}`, 'err');
+  }
+
+  const deadline = Date.now() + 150000;
+  let waited = 0;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 3000));
+    waited += 3;
+    setStatus(`Running the workflow… (${waited}s)`, 'busy');
+    try {
+      runs = await fetchRuns();
+      const found = findExisting(start, end);
+      // On a forced refresh the row already exists, so wait for a newer timestamp.
+      if (found && (!before || found.updated_at !== before)) {
+        refreshSelect(found);
+        btn.disabled = false;
+        return setStatus(force && before ? 'Recalculated from current source data.' : 'Report generated and stored.', 'ok');
+      }
+    } catch (_) { /* transient — keep polling */ }
+  }
+  btn.disabled = false;
+  setStatus('Timed out waiting for the report. It may still complete — reload shortly.', 'err');
+}
+
+function deltaHTML(t, key) {
+  if (!t) return '<span class="none">no comparison</span>';
+  if (t.note) return `<span class="none">${esc(t.note)}</span>`;
+  let magnitude, raw;
+  if (t.change_percentage_points !== undefined) { raw = t.change_percentage_points; magnitude = `${Math.abs(raw)} pp`; }
+  else if (t.pct_change !== null && t.pct_change !== undefined) { raw = t.pct_change; magnitude = `${Math.abs(raw)}%`; }
+  else if (t.change !== null && t.change !== undefined) { raw = t.change; magnitude = num(Math.abs(raw)); }
+  else return '<span class="none">no comparison</span>';
+  if (raw === 0) return `<span class="flat">▪ no change</span> vs previous period`;
+  const rising = raw > 0;
+  const favourable = LOWER_IS_BETTER.has(key) ? !rising : rising;
+  return `<span class="${favourable ? 'up' : 'down'}">${rising ? '▲' : '▼'} ${magnitude}</span> vs previous period`;
+}
+
+function tiles(metrics, trends, defs) {
+  return `<div class="tiles">${defs.map(([key, label, fmt]) => {
+    const v = metrics[key];
+    const shown = fmt === 'pct' ? (v === null ? '—' : `${num(v)}%`) : num(v);
+    return `<div class="tile"><div class="label">${esc(label)}</div>
+      <div class="value">${shown}</div>
+      <div class="delta">${deltaHTML(trends?.[key], key)}</div></div>`;
+  }).join('')}</div>`;
+}
+
+// Bars are scaled to the SUM of the categories, so a bar's length is its share of
+// the whole rather than its size relative to the biggest one. With a single
+// category there is nothing to compare against, so no bar is drawn at all.
+function barPanel(title, obj, unit) {
+  const entries = Object.entries(obj || {}).filter(([, v]) => Number(v) || Number(v) === 0);
+  if (!entries.length) return '';
+  const total = entries.reduce((a, [, v]) => a + (Number(v) || 0), 0);
+
+  if (entries.length === 1 || total === 0) {
+    return `<div class="panel"><div class="ptitle">${esc(title)}</div>
+      <div class="pscale">Only one category in this period — shown as a value.</div>
+      <div class="single">${entries.map(([k, v]) =>
+        `<div><span>${esc(k)}</span><span>${num(v)}</span></div>`).join('')}</div></div>`;
+  }
+
+  return `<div class="panel"><div class="ptitle">${esc(title)}</div>
+    <div class="pscale">Bar length = share of ${num(total)} total${unit ? ' ' + esc(unit) : ''}</div>
+    <div class="bars">${entries.map(([k, v]) => {
+      const share = (Number(v) / total) * 100;
+      return `<div class="barrow">
+        <div class="cat" title="${esc(k)}">${esc(k)}</div>
+        <div class="bartrack"><div class="barfill" style="width:${share.toFixed(1)}%"></div></div>
+        <div class="barval">${num(v)} <em>${share.toFixed(0)}%</em></div>
+      </div>`;
+    }).join('')}</div></div>`;
+}
+
+function render(run) {
+  const cur = run.current_metrics || {};
+  const tr = run.trends || {};
+  const dq = run.data_quality || {};
+  const ins = run.insights;
+
+  $('subtitle').textContent =
+    `Last calculated ${new Date(run.updated_at || run.generated_at).toLocaleString()} · anchored to ${run.reference_date}`;
+
+  // Warnings describe THIS period. Flagged records count the whole source dataset,
+  // so the two numbers legitimately differ — say so rather than putting them side
+  // by side and inviting the reader to add them up.
+  const flagged = dq.flagged_records || {};
+  const flaggedTotal = Object.values(flagged).reduce((a, b) => a + (Number(b) || 0), 0);
+  const warningCount = dq.warning_count || 0;
+  const outside = Math.max(flaggedTotal - warningCount, 0);
+
+  const insightBlock = run.insight_status === 'ok' && ins ? `
+    <h2 class="plain">AI analysis</h2>
+    <div class="panel summary">${esc(ins.executive_summary)}</div>
+    <h2 class="plain">Operational risks and anomalies</h2>
+    <div class="panel">${(ins.operational_risks || []).length
+      ? ins.operational_risks.map(r => `<div class="item">
+          <div class="head">${esc(r.title)}
+            <span class="sev sev-${esc((r.severity || 'low').toLowerCase())}">${esc(r.severity || 'n/a')}</span></div>
+          <div class="body">${esc(r.detail)}</div></div>`).join('')
+      : '<div class="body">No material risks identified for this period.</div>'}</div>
+    <h2 class="plain">Recommended actions</h2>
+    <div class="panel">${(ins.recommended_actions || []).length
+      ? ins.recommended_actions.map(a => `<div class="item">
+          <div class="head">${esc(a.action)} <span class="tag">${esc(a.owner_area || '')}</span></div>
+          <div class="body">${esc(a.rationale)}</div></div>`).join('')
+      : '<div class="body">No actions recommended for this period.</div>'}</div>`
+  : `<h2 class="plain">AI analysis</h2>
+     <div class="banner bad"><strong>AI insights unavailable for this run.</strong>
+       Reason: <code>${esc(run.insight_error?.reason || 'unknown')}</code>.
+       ${esc(run.insight_error?.detail || '')}
+       <div style="margin-top:6px">All metrics below were calculated deterministically and are unaffected.</div>
+     </div>`;
+
+  const aiWarnings = run.insight_status === 'ok' && ins?.data_quality_warnings?.length
+    ? ins.data_quality_warnings : null;
+
+  $('content').innerHTML = `
+    <div class="periodbar">
+      <strong>${esc(PERIOD_LABELS[run.period_label] || run.period_label)}</strong>:
+      ${esc(run.period_start)} → ${esc(run.period_end)} ·
+      compared against ${esc(run.comparison_start)} → ${esc(run.comparison_end)}
+      (immediately preceding period of equal length)
+    </div>
+
+    <section class="dept" style="--accent:var(--sales-accent);--tint:var(--sales-tint)">
+      <h2>Sales</h2>
+      ${tiles(cur.sales || {}, tr.sales, [
+        ['total_leads','Total leads'],['closed_won','Closed won'],['closed_lost','Closed lost'],
+        ['win_rate_pct','Win rate','pct'],['revenue_won','Revenue won'],['pipeline_value','Pipeline value'],
+        ['marketing_spend','Marketing spend'],['cost_per_lead','Cost per lead']])}
+      <div class="grid3" style="margin-top:12px">
+        ${barPanel('Revenue won by lead source', cur.sales?.revenue_by_lead_source, 'revenue')}
+      </div>
+    </section>
+
+    <section class="dept" style="--accent:var(--delivery-accent);--tint:var(--delivery-tint)">
+      <h2>Project delivery</h2>
+      ${tiles(cur.project_delivery || {}, tr.project_delivery, [
+        ['active_projects','Active projects'],['completed_projects','Completed'],['blocked_projects','Blocked'],
+        ['on_time_completion_rate_pct','On-time completion','pct'],['average_delay_days','Avg delay (days)'],
+        ['budget_variance','Budget variance'],['over_budget_projects','Over budget']])}
+      <div class="grid3" style="margin-top:12px">
+        ${barPanel('Delivery load by team', cur.project_delivery?.delivery_load_by_team, 'projects')}
+      </div>
+    </section>
+
+    <section class="dept" style="--accent:var(--people-accent);--tint:var(--people-tint)">
+      <h2>People ops</h2>
+      ${tiles(cur.people_ops || {}, tr.people_ops, [
+        ['applications','Applications'],['offers_accepted','Offers accepted'],['new_hires','New hires'],
+        ['exits','Exits'],['active_headcount_end','Headcount (period end)'],
+        ['time_to_hire_days','Time to hire (days)'],['offer_acceptance_time_days','Offer acceptance (days)'],
+        ['attrition_rate_pct','Attrition rate','pct']])}
+      <div class="grid3" style="margin-top:12px">
+        ${barPanel('Headcount by department', cur.people_ops?.headcount_by_department, 'people')}
+        ${barPanel('Exits by department', cur.people_ops?.exits_by_department, 'exits')}
+      </div>
+    </section>
+
+    ${insightBlock}
+
+    <h2 class="plain">Data quality</h2>
+    <div class="panel">
+      <div class="body" style="margin-bottom:10px">
+        <strong>${warningCount}</strong> issue${warningCount === 1 ? '' : 's'} affected this period's figures.
+        Across the full source data, ${flaggedTotal} record${flaggedTotal === 1 ? '' : 's'}
+        ${flaggedTotal === 1 ? 'is' : 'are'} flagged
+        (${esc(Object.entries(flagged).map(([k, v]) => `${k.replace(/_/g,' ')} ${v}`).join(', '))})${
+          outside ? ` — the other ${outside} fall outside this reporting period` : ''}.
+      </div>
+      ${(dq.warnings || []).length
+        ? `<ul class="plain">${dq.warnings.map(w => `<li><strong>${esc(w.source)}</strong> — ${esc(w.detail)}</li>`).join('')}</ul>`
+        : '<div class="body">No records were skipped or flagged within this period.</div>'}
+      ${aiWarnings ? `<div class="notes"><strong>AI notes:</strong>
+        <ul class="plain">${aiWarnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul></div>` : ''}
+    </div>
+
+    ${run.methodology_notes ? `<div class="notes"><strong>How these numbers are calculated</strong>
+      <ul class="plain">${Object.entries(run.methodology_notes)
+        .map(([k,v]) => `<li><strong>${esc(k.replace(/_/g,' '))}</strong>: ${esc(v)}</li>`).join('')}</ul></div>` : ''}`;
+}
+
+$('runBtn').onclick = requestRange;
+load();
+</script>
+</body>
+</html>
