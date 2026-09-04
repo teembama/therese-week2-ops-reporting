@@ -80,6 +80,10 @@
                     display: flex; align-items: center; gap: 8px; }
   section.dept h2::before { content: ''; width: 10px; height: 10px; border-radius: 3px;
                             background: var(--accent); display: inline-block; }
+  section.dept.offline { opacity: 0.92; }
+  section.dept h2 .offtag { font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+                            color: var(--critical); border: 1px solid var(--critical);
+                            border-radius: 999px; padding: 1px 7px; margin-left: 2px; }
   h2.plain { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em;
              color: var(--muted); margin: 32px 0 12px; font-weight: 650; }
 
@@ -94,6 +98,7 @@
   .delta .none { color: var(--muted); font-style: italic; }
 
   .panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .panel.offline { border-left: 3px solid var(--critical); }
   .panel .ptitle { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
   .panel .pscale { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
   .bars { display: grid; gap: 10px; }
@@ -173,6 +178,12 @@ const NAMED_PERIODS = ['last_30', 'last_90', 'ytd'];
 const PERIOD_LABELS = {
   last_30: 'Last 30 days', last_90: 'Last 90 days',
   ytd: 'Year to date', custom: 'Custom range'
+};
+
+const SOURCE_NAMES = {
+  sales: 'Sales — Google Sheets',
+  project_delivery: 'Project delivery — Airtable',
+  people_ops: 'People ops — internal API'
 };
 
 const LOWER_IS_BETTER = new Set([
@@ -358,6 +369,30 @@ function barPanel(title, obj, unit) {
     }).join('')}</div></div>`;
 }
 
+// A source that could not be retrieved has every metric set to null, which is not
+// the same as zero. Rendering "—" in the usual tiles would read as "we measured
+// nothing", so the whole group is replaced by a statement of what is missing and
+// why. Reports stored before this behaviour existed have no source_available flag
+// at all, so only an explicit `false` counts as unavailable.
+const isOffline = group => group && group.source_available === false;
+
+function deptSection(key, title, accentVar, tintVar, group, trendGroup, defs, barsHTML) {
+  const off = isOffline(group);
+  const head = `<h2>${esc(title)}${off ? '<span class="offtag">unavailable</span>' : ''}</h2>`;
+  const body = off
+    ? `<div class="panel offline"><div class="body">
+         <strong>This source could not be retrieved for this run.</strong>
+         <div style="margin-top:4px"><code>${esc(group.unavailable_reason || 'no detail recorded')}</code></div>
+         <div style="margin-top:8px">Its metrics are <strong>unknown, not zero</strong>, so they are not
+         shown rather than displayed as blanks that could be read as measured values. Every other
+         section on this page was calculated normally.</div>
+       </div></div>`
+    : tiles(group || {}, trendGroup, defs) +
+      (barsHTML ? `<div class="grid3" style="margin-top:12px">${barsHTML}</div>` : '');
+  return `<section class="dept${off ? ' offline' : ''}" style="--accent:var(${accentVar});--tint:var(${tintVar})">
+    ${head}${body}</section>`;
+}
+
 function render(run) {
   const cur = run.current_metrics || {};
   const tr = run.trends || {};
@@ -366,6 +401,20 @@ function render(run) {
 
   $('subtitle').textContent =
     `Last calculated ${new Date(run.updated_at || run.generated_at).toLocaleString()} · anchored to ${run.reference_date}`;
+
+  const offline = ['sales', 'project_delivery', 'people_ops'].filter(k => isOffline(cur[k]));
+  const degradedBanner = offline.length ? `
+    <div class="banner bad">
+      <strong>Partial report — ${offline.length} source system${offline.length === 1 ? '' : 's'}
+      could not be retrieved when this report was calculated.</strong>
+      <ul class="plain" style="margin-top:6px">
+        ${offline.map(k => `<li><strong>${esc(SOURCE_NAMES[k])}</strong> —
+          ${esc(cur[k].unavailable_reason || 'no detail recorded')}</li>`).join('')}
+      </ul>
+      <div style="margin-top:6px">Those metrics are unknown, not zero, and are not shown.
+      The remaining sections were calculated normally. Tick
+      <strong>Recalculate even if stored</strong> above to try the sources again.</div>
+    </div>` : '';
 
   // Warnings describe THIS period. Flagged records count the whole source dataset,
   // so the two numbers legitimately differ — say so rather than putting them side
@@ -402,6 +451,8 @@ function render(run) {
     ? ins.data_quality_warnings : null;
 
   $('content').innerHTML = `
+    ${degradedBanner}
+
     <div class="periodbar">
       <strong>${esc(PERIOD_LABELS[run.period_label] || run.period_label)}</strong>:
       ${esc(run.period_start)} → ${esc(run.period_end)} ·
@@ -409,40 +460,28 @@ function render(run) {
       (immediately preceding period of equal length)
     </div>
 
-    <section class="dept" style="--accent:var(--sales-accent);--tint:var(--sales-tint)">
-      <h2>Sales</h2>
-      ${tiles(cur.sales || {}, tr.sales, [
+    ${deptSection('sales', 'Sales', '--sales-accent', '--sales-tint',
+      cur.sales, tr.sales, [
         ['total_leads','Total leads'],['closed_won','Closed won'],['closed_lost','Closed lost'],
         ['win_rate_pct','Win rate','pct'],['revenue_won','Revenue won'],['pipeline_value','Pipeline value'],
-        ['marketing_spend','Marketing spend'],['cost_per_lead','Cost per lead']])}
-      <div class="grid3" style="margin-top:12px">
-        ${barPanel('Revenue won by lead source', cur.sales?.revenue_by_lead_source, 'revenue')}
-      </div>
-    </section>
+        ['marketing_spend','Marketing spend'],['cost_per_lead','Cost per lead']],
+      barPanel('Revenue won by lead source', cur.sales?.revenue_by_lead_source, 'revenue'))}
 
-    <section class="dept" style="--accent:var(--delivery-accent);--tint:var(--delivery-tint)">
-      <h2>Project delivery</h2>
-      ${tiles(cur.project_delivery || {}, tr.project_delivery, [
+    ${deptSection('project_delivery', 'Project delivery', '--delivery-accent', '--delivery-tint',
+      cur.project_delivery, tr.project_delivery, [
         ['active_projects','Active projects'],['completed_projects','Completed'],['blocked_projects','Blocked'],
         ['on_time_completion_rate_pct','On-time completion','pct'],['average_delay_days','Avg delay (days)'],
-        ['budget_variance','Budget variance'],['over_budget_projects','Over budget']])}
-      <div class="grid3" style="margin-top:12px">
-        ${barPanel('Delivery load by team', cur.project_delivery?.delivery_load_by_team, 'projects')}
-      </div>
-    </section>
+        ['budget_variance','Budget variance'],['over_budget_projects','Over budget']],
+      barPanel('Delivery load by team', cur.project_delivery?.delivery_load_by_team, 'projects'))}
 
-    <section class="dept" style="--accent:var(--people-accent);--tint:var(--people-tint)">
-      <h2>People ops</h2>
-      ${tiles(cur.people_ops || {}, tr.people_ops, [
+    ${deptSection('people_ops', 'People ops', '--people-accent', '--people-tint',
+      cur.people_ops, tr.people_ops, [
         ['applications','Applications'],['offers_accepted','Offers accepted'],['new_hires','New hires'],
         ['exits','Exits'],['active_headcount_end','Headcount (period end)'],
         ['time_to_hire_days','Time to hire (days)'],['offer_acceptance_time_days','Offer acceptance (days)'],
-        ['attrition_rate_pct','Attrition rate','pct']])}
-      <div class="grid3" style="margin-top:12px">
-        ${barPanel('Headcount by department', cur.people_ops?.headcount_by_department, 'people')}
-        ${barPanel('Exits by department', cur.people_ops?.exits_by_department, 'exits')}
-      </div>
-    </section>
+        ['attrition_rate_pct','Attrition rate','pct']],
+      barPanel('Headcount by department', cur.people_ops?.headcount_by_department, 'people') +
+      barPanel('Exits by department', cur.people_ops?.exits_by_department, 'exits'))}
 
     ${insightBlock}
 
